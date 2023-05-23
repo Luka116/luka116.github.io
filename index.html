@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Colorful World</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root {
+            color-scheme: dark;
+            --canvas-bg-color: rgba(0, 0, 0, 0); /* transparent */
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+		
+		canvas {
+			position: absolute;
+			top: 3px;
+		}
+		
+		button {
+			border: none;
+			color: white;
+			padding: 15px 32px;
+			text-align: center;
+			text-decoration: none;
+			display: inline-block;
+			font-size: 16px;
+			margin: 4px 2px;
+			cursor: pointer;
+			position: absolute;
+			background-color: #4CAF50;
+		}
+		#resetCanvas {
+			top: 100px;
+			left: 100px;
+		}
+		#color-picker {
+			position: absolute;
+			top: 104px;
+			left: 275px;
+			border: none;
+		}
+		.opts {
+			position: absolute;
+			left: 100px;
+			top:200px;
+		}
+    </style>
+</head>
+<body>
+	<canvas id="life" width="936" height="936"></canvas>
+	<button id="resetCanvas">New Canvas</button>
+	<input type="color" id="color-picker" value="#aa00ff" style="height:48px; width:48px;">
+	
+	<div class="opts">
+		<label for="pauseOrGo">Pause</label>
+		<input type="checkbox" id="pauseOrGo" checked><br><br>
+		
+		<label for="randomColorToggle">Place Random Colors</label>
+		<input type="checkbox" id="randomColorToggle"><br><br>
+		
+		<!-- radio color spread type option -->
+		<input type="radio" id="normalColorSpread" name="colorSpreadOption" value="leaveEm" checked>
+		<label for="normalColorSpread">Normal</label><br>
+		<!--<input type="radio" id="brighterReplaceDimmer" name="colorSpreadOption" value="brightEm">
+		<label for="brighterReplaceDimmer">Brighter colors spread over dimmer ones</label><br>-->
+		<input type="radio" id="mixColors" name="colorSpreadOption" value="mixEm">
+		<label for="mixColors">New colors mix with old ones</label><br><br>
+		
+		
+		<label for="spreadChanceSlider">Spread Chance (0 to 1): </label>
+		<input type="number" min="0" max="1" step="0.01" id="spreadChanceSlider" value="0.125"><br>
+		<label for="fallOffSlider">Fall off (-1 to 1): </label>
+		<input type="number" min="-1" max="1" step="0.001" id="fallOffSlider" value="0.03125">
+	</div>
+	
+	<p style="top:100px; right:50px; position:absolute; width:400px; user-select: none; pointer-events: none;">
+		Tips:<br />
+		 - the closer spread chance is to 1, the faster, more diamond-shaped & less circle-shaped shapes become, more (idk how to say) it spreads; values above 1 do nothing<br />
+		 - want the canvas you made as a picture w/out the UI? RightMouseClick & save image as png : )<br />
+		 - bigger fall off generally translates to more color-diverse results, but smalle splotches; negative fall off means the color get brighter<br />
+		 - new colors mixing with new ones becomes slower the more colors you have on screen; makes color splotches much smoother; if you do turn it on, turn it off for &lt;1 second whenever it gets slow
+	</p>
+	
+	<script>
+		const size=936
+		let fallOff = 1/32
+		const minColor = 3
+		let spreadChance = 1/8
+		let pauseDontSim = true
+		let randomColors = false
+		let colorSpreadOption = "leaveEm"
+		
+		const canvas = document.getElementById("life");
+		const canvasContext2D = canvas.getContext('2d');
+		const drawRect = (x,y,c,s)=>{
+			canvasContext2D.fillStyle=c
+			canvasContext2D.fillRect(x,y,s,s)
+		}
+		const drawLine = (x1, y1, x2, y2, color)=>{
+			canvasContext2D.beginPath();
+			canvasContext2D.moveTo(x1, y1);
+			canvasContext2D.lineTo(x2, y2);
+			canvasContext2D.strokeStyle = color;
+			canvasContext2D.stroke();
+		}
+		
+		
+		//checkboxes & options
+		document.getElementById('pauseOrGo').addEventListener('click', function() { pauseDontSim = this.checked; });
+		document.getElementById('randomColorToggle').addEventListener('click', function() { randomColors = this.checked; });
+		
+		document.getElementById("normalColorSpread").addEventListener("click", colorSpreadMode);
+		/*document.getElementById("brighterReplaceDimmer").addEventListener("click", colorSpreadMode);*/
+		document.getElementById("mixColors").addEventListener("click", colorSpreadMode);
+		function colorSpreadMode(event){ colorSpreadOption = event.target.value; }
+		
+		document.getElementById("spreadChanceSlider").addEventListener("change", function(event){ spreadChance = event.target.value; });
+		document.getElementById("fallOffSlider").addEventListener("change", function(event){ fallOff = event.target.value; });
+		
+		
+		//color thingies
+		let originColor = "#aa00ff";
+		const colorPicker = document.getElementById('color-picker');
+		colorPicker.addEventListener('input', function(event) {
+			originColor = event.target.value;
+		});
+		const RGBtoHEX = (r, g, b)=>{
+			return `rgb(${r}, ${g}, ${b})`;
+		}
+		const HEXtoRGB = (hex) => {
+			hex = hex.replace("#", "");
+			const r = parseInt(hex.substring(0, 2), 16);
+			const g = parseInt(hex.substring(2, 4), 16);
+			const b = parseInt(hex.substring(4, 6), 16);
+
+			return {r, g, b};
+		};
+		
+		
+		//LClick
+		canvas.addEventListener('click', function(event){
+			mouseInteract(event.offsetX, event.offsetY);
+		});
+		const mouseInteract = (mouseX, mouseY)=>{
+			canvasGrowth[mouseX][mouseY].state = 2;
+			
+			let colorValues = (randomColors) ? HEXtoRGB(Math.floor(Math.random() * 2 ** 24).toString(16).padStart(6, "0")) : HEXtoRGB(originColor);
+			canvasGrowth[mouseX][mouseY].cellR = colorValues.r;
+			canvasGrowth[mouseX][mouseY].cellG = colorValues.g;
+			canvasGrowth[mouseX][mouseY].cellB = colorValues.b;
+		}
+		
+		
+		//reset canvas button
+		const resetCanvasButton = document.getElementById("resetCanvas")
+		resetCanvasButton.addEventListener('click', () => {
+			canvasContext2D.clearRect(0, 0, size, size);
+			drawRect(0, 0, "black", size);
+			fillNewCanvas(size);
+		});
+		
+		
+		//empty canvas
+		let canvasGrowth=[];
+		const cell = function(x, y) {
+			// state 0=to be filled, 1=draw next turn, 2=draw and spread, 3=ignore
+			return { "state":0, "x": x, "y": y, "cellR":0, "cellG":0, "cellB":0};
+		};
+		const fillNewCanvas = function(sizeOfCanvas) {
+			canvasGrowth=[];
+			for (let x=0; x<sizeOfCanvas; x++){
+				let row = [];
+				for (let y=0; y<sizeOfCanvas; y++){
+					row.push(cell(x, y));
+				}
+				canvasGrowth.push(row);
+			}
+		}
+		fillNewCanvas(size);
+		
+		
+		const spreadColor = (x, y)=>{
+			let filleddNeighbors = 0
+			let r = canvasGrowth[x][y].cellR
+			let g = canvasGrowth[x][y].cellG
+			let b = canvasGrowth[x][y].cellB
+			
+			//spreads
+			if (r+g+b>minColor){
+				for (let i=0; i<4; i++){
+					let willSpread = false
+					let neighbor = canvasGrowth[x][y];
+					
+					//directions
+					if (!(i) && (x+1 < size)){ //right
+						willSpread = true;
+						neighbor = canvasGrowth[x+1][y];
+					} else if (i===1 && (y+1 < size)){ //down
+						willSpread = true;
+						neighbor = canvasGrowth[x][y+1];
+					} else if (i===2 && (x-1 >= 0)){ //left
+						willSpread = true;
+						neighbor = canvasGrowth[x-1][y];
+					} else if (y-1 >= 0){ //up
+						willSpread = true;
+						neighbor = canvasGrowth[x][y-1];
+					}
+					
+					//spreads
+					if (!willSpread){continue;}
+					
+					if (neighbor.state === 0){
+						if (spreadChance<Math.random()){continue;}
+						neighbor.state = (i<2 ? 1 : 2);
+						neighbor.cellR = Math.floor(r * (1 - fallOff*Math.random()));
+						neighbor.cellG = Math.floor(g * (1 - fallOff*Math.random()));
+						neighbor.cellB = Math.floor(b * (1 - fallOff*Math.random()));
+					} else if (colorSpreadOption==="mixEm" && neighbor.state === 3){
+						if (spreadChance<Math.random()){continue;}
+						neighbor.state = (i<2 ? 1 : 2);
+						neighbor.cellR = Math.floor((r+neighbor.cellR)*0.5);
+						neighbor.cellG = Math.floor((g+neighbor.cellG)*0.5);
+						neighbor.cellB = Math.floor((b+neighbor.cellB)*0.5);
+					} else {filleddNeighbors++}
+				}
+			} else {filleddNeighbors=4}
+			if (filleddNeighbors==4){canvasGrowth[x][y].state = 3}
+		}
+		
+		const update=()=>{
+			for (let x=0; x<size; x++){
+				for (let y=0; y<size; y++){
+					if (canvasGrowth[x][y].state === 2){
+						drawRect(x, y, RGBtoHEX(canvasGrowth[x][y].cellR, canvasGrowth[x][y].cellG, canvasGrowth[x][y].cellB), 1);
+						if (!(pauseDontSim)){ spreadColor(x, y); }
+					} else if (canvasGrowth[x][y].state === 1){
+						canvasGrowth[x][y].state = 2;
+					}
+				}
+			}
+			requestAnimationFrame(update);
+		}
+		drawRect(0, 0, "black", size);
+		update();
+	</script>
+</body>
+</html>
